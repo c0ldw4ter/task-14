@@ -1,0 +1,6 @@
+[submodule "submodule"]
+	path = submodule
+	url = file:///home/mrdan/submodule-repo
+[submodule "submodule-repo"]
+	path = submodule-repo
+	url = git@github.com:c0ldw4ter/submodule-repo.git
