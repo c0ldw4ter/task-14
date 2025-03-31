@@ -1,0 +1,78 @@
+# Создание VPC-сети
+resource "yandex_vpc_network" "default" {
+  name = "my-network"
+}
+
+# Создание приватной подсети в зоне var.zone с CIDR, например, 10.0.1.0/24
+resource "yandex_vpc_subnet" "private" {
+  name           = "private-subnet"
+  zone           = var.zone
+  network_id     = yandex_vpc_network.default.id
+  v4_cidr_blocks = ["10.0.1.0/24"]
+}
+
+# Создание NAT gateway для приватной подсети
+resource "yandex_vpc_nat_gateway" "nat" {
+  name      = "nat-gateway"
+  folder_id = var.folder_id
+  zone      = var.zone
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.private.id
+  }
+}
+
+# Создание таблицы маршрутизации для приватной подсети
+resource "yandex_vpc_route_table" "private_routes" {
+  name       = "private-route-table"
+  folder_id  = var.folder_id
+  network_id = yandex_vpc_network.default.id
+
+  # Направляем весь IPv4-трафик через NAT gateway
+  static_route {
+    destination_prefix       = "0.0.0.0/0"
+    next_hop_nat_gateway_id  = yandex_vpc_nat_gateway.nat.id
+  }
+
+  # Направляем весь IPv6-трафик через NAT gateway
+  static_route {
+    destination_prefix       = "::/0"
+    next_hop_nat_gateway_id  = yandex_vpc_nat_gateway.nat.id
+  }
+}
+
+# Привязка таблицы маршрутизации к приватной подсети
+resource "yandex_vpc_route_table_attachment" "private_rt_attachment" {
+  subnet_id      = yandex_vpc_subnet.private.id
+  route_table_id = yandex_vpc_route_table.private_routes.id
+}
+
+# Создание инстанса в приватной подсети
+resource "yandex_compute_instance" "private_instance" {
+  name        = "private-instance"
+  zone        = var.zone
+  platform_id = "standard-v1"
+
+  resources {
+    cores  = 2
+    memory = 2
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = var.image_id
+      size     = 10
+      type     = "network-hdd"
+    }
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.private.id
+    # Обратите внимание, что NAT для исходящего трафика осуществляется через таблицу маршрутизации.
+  }
+
+  metadata = {
+    # Здесь можно передать cloud-init сценарий для начальной конфигурации инстанса.
+    user_data = file("cloud-init-private.txt")
+  }
+}
